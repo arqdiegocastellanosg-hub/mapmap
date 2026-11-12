@@ -16,8 +16,15 @@ name: Distribucion
 on:
   workflow_dispatch:
     inputs:
+      macos_runner:
+        description: 'Runner de macOS. Ambos generan la app Universal (x86_64 + arm64); macos-15-intel evita la cola de los runners ARM64'
+        type: choice
+        options:
+          - macos-15-intel
+          - macos-15
+        default: macos-15-intel
       publicar:
-        description: 'Publicar una Release (pre-release) de GitHub con los instaladores'
+        description: 'Publicar una Release (pre-release). Ademas requiere la variable de repositorio PUBLICAR_RELEASES=true'
         type: boolean
         default: false
   push:
@@ -200,9 +207,14 @@ jobs:
   macos:
     name: macOS Universal
     needs: fuente
-    runs-on: macos-15
+    # macos-15-intel por defecto: compila las dos arquitecturas (compilacion cruzada de Xcode)
+    # y no depende de los runners ARM64, que suelen estar saturados. Soporte de GitHub hasta 2027.
+    # Con etiqueta v* no hay formulario y se usa el valor por defecto.
+    runs-on: ${{ inputs.macos_runner || 'macos-15-intel' }}
+    timeout-minutes: 90
     env:
       MM_VERSION: ${{ needs.fuente.outputs.version }}
+      MM_ARCHS: 'x86_64 arm64'
     steps:
       - uses: actions/checkout@v6
 
@@ -223,13 +235,34 @@ jobs:
           arch: 'clang_64'
           modules: 'qtmultimedia'
 
+      - name: Comprobar que el Qt instalado es Universal (antes de compilar)
+        run: |
+          echo "Runner: $(uname -m), macOS $(sw_vers -productVersion)"
+          QTLIB="$(qmake -query QT_INSTALL_LIBS)"
+          QTPLUG="$(qmake -query QT_INSTALL_PLUGINS)"
+          FAIL=0
+          for f in "$QTLIB/QtCore.framework/QtCore" "$QTLIB/QtMultimedia.framework/QtMultimedia" \
+                   "$QTLIB/QtOpenGLWidgets.framework/QtOpenGLWidgets" \
+                   "$QTPLUG/multimedia/libffmpegmediaplugin.dylib" \
+                   $(ls "$QTLIB"/libavcodec*.dylib "$QTLIB"/libavformat*.dylib 2>/dev/null | head -2) \
+                   third_party/macos/Syphon.framework/Versions/A/Syphon; do
+            a=$(lipo -archs "$f" 2>/dev/null || echo "NO ENCONTRADO")
+            echo "$a  <- $f"
+            [[ " $a " == *" arm64 "* && ( " $a " == *" x86_64 "* || " $a " == *" x86_64h "* ) ]] || FAIL=1
+          done
+          [ "$FAIL" -eq 0 ] || { echo "::error::Qt, FFmpeg o Syphon no son universales en este runner"; exit 1; }
+
       - name: Compilar MapMap Universal (Release)
         run: |
+          # QMAKE_APPLE_DEVICE_ARCHS: qmake compila y une ambas arquitecturas en cada binario.
+          # El sistema minimo lo fija Qt (QMAKE_MACOSX_DEPLOYMENT_TARGET = 12.0 en Qt 6.8);
+          # check_app.sh lo verifica por arquitectura.
           qmake mapmap.pro -after "CONFIG-=debug" "CONFIG+=release" \
-            "QMAKE_APPLE_DEVICE_ARCHS=x86_64 arm64"
+            "QMAKE_APPLE_DEVICE_ARCHS=$MM_ARCHS"
           make -j"$(sysctl -n hw.logicalcpu)"
           test -x MapMap.app/Contents/MacOS/MapMap || { echo "No se genero MapMap.app"; exit 1; }
-          lipo -archs MapMap.app/Contents/MacOS/MapMap
+          echo "Arquitecturas del ejecutable: $(lipo -archs MapMap.app/Contents/MacOS/MapMap)"
+          grep -m1 -oE -- '-arch [a-z0-9_]+ -arch [a-z0-9_]+' Makefile || grep -m3 -E 'QMAKE_APPLE_DEVICE_ARCHS|-arch' Makefile || true
 
       - name: Tests unitarios
         env:
@@ -243,10 +276,10 @@ jobs:
       - name: Empaquetar (macdeployqt, licencias, firma ad hoc)
         run: ./packaging/macos/package_app.sh MapMap.app "$MM_VERSION" fuente/Licencias
 
-      - name: Verificar app Universal y dependencias
-        run: ./packaging/macos/check_app.sh MapMap.app informe/macos_dependencias.txt
+      - name: Verificar Universal por arquitectura, dependencias y macOS 12
+        run: ./packaging/macos/check_app.sh MapMap.app informe/macos_dependencias.txt informe/macos_verificacion_universal.md 12.0
 
-      - name: Prueba de arranque (arm64 y, si hay Rosetta, x86_64)
+      - name: Prueba de arranque (arquitecturas ejecutables en este runner)
         run: ./packaging/macos/smoke_test.sh MapMap.app informe/macos_pruebas.md
 
       - name: Crear DMG y version portable
@@ -257,7 +290,7 @@ jobs:
         run: |
           mkdir -p informe
           {
-            echo "Runner: $ImageOS $ImageVersion ($(sw_vers -productVersion), $(uname -m))"
+            echo "Runner: ${{ inputs.macos_runner || 'macos-15-intel' }} / $ImageOS $ImageVersion ($(sw_vers -productVersion), $(uname -m))"
             echo "Qt: $QT_VERSION (clang_64, universal)"
             echo "qmake: $(qmake -v | tr '\n' ' ')"
             echo "Xcode: $(xcodebuild -version | tr '\n' ' ')"
@@ -304,7 +337,10 @@ jobs:
   publicar:
     name: Publicar Release
     needs: [fuente, distribucion]
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publicar
+    # Doble seguro: ademas de la etiqueta v* o la casilla "publicar", exige la variable de
+    # repositorio PUBLICAR_RELEASES=true (Settings > Secrets and variables > Actions > Variables).
+    # Mientras esa variable no exista, nunca se publica una Release.
+    if: vars.PUBLICAR_RELEASES == 'true' && (startsWith(github.ref, 'refs/tags/v') || inputs.publicar)
     runs-on: ubuntu-latest
     permissions:
       contents: write   # solo este job puede crear Releases (GITHUB_TOKEN del propio repo)

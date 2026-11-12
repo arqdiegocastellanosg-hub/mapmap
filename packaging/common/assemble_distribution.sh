@@ -22,6 +22,7 @@ cp "$HERE"/packaging/docs/*.txt "$HERE"/packaging/docs/*.md "$D/Documentacion/" 
 cp "$HERE/packaging/README.md" "$D/Documentacion/COMO_GENERAR_NUEVAS_VERSIONES.md"
 cp "$A"/informe-windows/windows_dependencias.txt "$D/Dependencias/" 2>/dev/null || true
 cp "$A"/informe-macos/macos_dependencias.txt "$D/Dependencias/" 2>/dev/null || true
+cp "$A"/informe-macos/macos_verificacion_universal.md "$D/Dependencias/" 2>/dev/null || true
 cp "$A"/informe-windows/* "$A"/informe-macos/* "$D/Informe_Pruebas/" 2>/dev/null || true
 cp "$HERE/packaging/docs/PRUEBAS_MANUALES.md" "$D/Informe_Pruebas/" 2>/dev/null || true
 
@@ -44,7 +45,10 @@ cp "$HERE/packaging/docs/PRUEBAS_MANUALES.md" "$D/Informe_Pruebas/" 2>/dev/null 
   echo
   echo "--- macOS ---"
   cat "$A/informe-macos/macos_versiones.txt" 2>/dev/null || echo "(sin datos)"
-  echo "Arquitecturas: Universal (x86_64/x86_64h + arm64). Sistema minimo declarado: macOS 12."
+  echo "Arquitecturas: Universal (x86_64/x86_64h + arm64), verificadas por binario y arquitectura."
+  echo "Sistema minimo: macOS 12 (Info.plist y LC_BUILD_VERSION de cada arquitectura)."
+  echo "Compilado en un runner Intel por defecto (compilacion cruzada de Xcode). La parte arm64 se"
+  echo "verifica de forma estatica; su arranque debe probarse en un Mac Apple Silicon real."
   echo "Firma de codigo: ad hoc. NO firmada con Developer ID ni notarizada por Apple."
   echo
   echo "--- Cambios respecto al proyecto oficial ---"

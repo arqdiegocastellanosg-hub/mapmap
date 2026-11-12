@@ -18,11 +18,32 @@ Release (ver abajo) o descargue `MapMap_Distribucion` y guárdelo como copia mae
 
 ## Generar una nueva versión
 **Opción 1, manual:** en GitHub, abra el fork > pestaña **Actions** > **Distribucion** >
-**Run workflow**. Marque "Publicar" si quiere crear una Release (pre-release) con los
-instaladores adjuntos. Tarda unos 20-40 minutos.
+**Run workflow**. Elija el runner de macOS (por defecto `macos-15-intel`). Tarda unos 20-40 minutos.
+Los resultados quedan como artefactos de la ejecución. No se publica nada.
 
-**Opción 2, con etiqueta:** cree una etiqueta que empiece por `v` en el commit deseado
-(por ejemplo `v1.0.0-alpha.1`). El workflow se ejecuta y publica la Release automáticamente.
+**Opción 2, con etiqueta:** cree una etiqueta que empiece por `v` (por ejemplo `v1.0.0-alpha.1`).
+El workflow se ejecuta con el runner de macOS por defecto.
+
+Si un job falla (por ejemplo, porque no hay runner de macOS disponible), abra la ejecución y
+pulse **Re-run failed jobs**: solo se repiten el job fallido y los que dependen de él.
+
+## Publicación de Releases (desactivada por defecto)
+El job `publicar` tiene un doble seguro. Solo se ejecuta si existe la variable de repositorio
+`PUBLICAR_RELEASES` con valor `true` (Settings > Secrets and variables > Actions > Variables)
+**y**, además, la ejecución viene de una etiqueta `v*` o se marcó la casilla "publicar".
+Mientras esa variable no exista, el workflow nunca crea Releases.
+
+## Runner de macOS y compilación Universal
+- Por defecto se usa `macos-15-intel`. Xcode compila las dos arquitecturas (x86_64 y arm64)
+  desde un Mac Intel mediante compilación cruzada (`QMAKE_APPLE_DEVICE_ARCHS="x86_64 arm64"`),
+  enlazando con el Qt oficial, que es universal. Así se evitan las colas de los runners ARM64.
+- Alternativa: `macos-15` (Apple Silicon). Genera el mismo resultado Universal.
+- **Limitación:** en un runner Intel la parte arm64 se verifica de forma estática (arquitectura,
+  dependencias, sistema mínimo, firma), pero no se puede ejecutar. El arranque en Apple Silicon
+  se prueba en un Mac real (ver `docs/PRUEBAS_MANUALES.md`, prueba M12).
+- GitHub mantendrá `macos-15-intel` hasta otoño de 2027 (último runner Intel). Después habrá
+  que usar `macos-15` u otro runner ARM64: basta elegirlo en el formulario o cambiar el valor
+  por defecto en `distribucion.yml`.
 
 ## Actualizar el fork con los cambios del proyecto oficial
 En la página del fork: **Sync fork** > **Update branch**. Después ejecute el workflow.
@@ -43,8 +64,10 @@ packaging/
   windows/check_deps.ps1      Verifica DLL, plugins y FFmpeg (objdump)
   windows/test_installer.ps1  Instala, arranca sin Qt en el PATH y desinstala
   macos/package_app.sh        macdeployqt, Info.plist, licencias, firma ad hoc
-  macos/check_app.sh          Verifica Universal (lipo) y rutas externas (otool)
-  macos/smoke_test.sh         Arranque arm64 y x86_64 (Rosetta)
+  macos/check_app.sh          Por cada binario y cada arquitectura: presencia (lipo),
+                              dependencias (otool -arch), sistema minimo <= macOS 12
+  macos/smoke_test.sh         Arranque de las arquitecturas ejecutables en el runner;
+                              informe de pruebas ejecutadas y pendientes
   macos/make_dmg.sh           DMG y ZIP portable
   common/assemble_distribution.sh  Estructura MapMap_Distribucion
   licenses/THIRD_PARTY_NOTICES.md  Avisos de licencia
