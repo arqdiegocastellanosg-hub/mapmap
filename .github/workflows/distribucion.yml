@@ -93,11 +93,11 @@ jobs:
           cp third_party/macos/Syphon.LICENSE.txt out/Licencias/Syphon_BSD-2-Clause.txt
           cp packaging/licenses/THIRD_PARTY_NOTICES.md out/Licencias/
           cp README.md out/Licencias/MapMap_README_autores_y_creditos.md
-          # Textos oficiales de la Free Software Foundation.
-          curl -fsSL https://www.gnu.org/licenses/lgpl-3.0.txt     -o out/Licencias/LGPL-3.0.txt
-          curl -fsSL https://www.gnu.org/licenses/lgpl-2.1.txt     -o out/Licencias/LGPL-2.1.txt
-          curl -fsSL https://www.gnu.org/licenses/gpl-3.0.txt      -o out/Licencias/GPL-3.0.txt
-          curl -fsSL https://www.gnu.org/licenses/gcc-exception-3.1.txt -o out/Licencias/GCC-Runtime-Library-Exception-3.1.txt
+          # Textos oficiales de la FSF guardados en el repositorio (ver packaging/licenses/textos/ORIGEN.txt).
+          for f in GPL-3.0.txt LGPL-3.0.txt LGPL-2.1.txt GCC-Runtime-Library-Exception-3.1.txt; do
+            test -s "packaging/licenses/textos/$f" || { echo "Falta packaging/licenses/textos/$f"; exit 1; }
+            cp "packaging/licenses/textos/$f" out/Licencias/
+          done
           ls -l out/Licencias
 
       - uses: actions/upload-artifact@v7
@@ -141,14 +141,12 @@ jobs:
           Copy-Item third_party\macos\Syphon.LICENSE.txt "$L\Syphon_BSD-2-Clause.txt"
           Copy-Item packaging\licenses\THIRD_PARTY_NOTICES.md "$L\"
           Copy-Item README.md "$L\MapMap_README_autores_y_creditos.md"
-          # Textos oficiales de la Free Software Foundation.
-          $fsf = @{
-            'LGPL-3.0.txt' = 'https://www.gnu.org/licenses/lgpl-3.0.txt'
-            'LGPL-2.1.txt' = 'https://www.gnu.org/licenses/lgpl-2.1.txt'
-            'GPL-3.0.txt'  = 'https://www.gnu.org/licenses/gpl-3.0.txt'
-            'GCC-Runtime-Library-Exception-3.1.txt' = 'https://www.gnu.org/licenses/gcc-exception-3.1.txt'
+          # Textos oficiales de la FSF guardados en el repositorio (ver packaging/licenses/textos/ORIGEN.txt).
+          foreach ($f in 'GPL-3.0.txt', 'LGPL-3.0.txt', 'LGPL-2.1.txt', 'GCC-Runtime-Library-Exception-3.1.txt') {
+            $src = "packaging\licenses\textos\$f"
+            if (-not (Test-Path $src) -or (Get-Item $src).Length -eq 0) { throw "Falta $src" }
+            Copy-Item $src "$L\"
           }
-          foreach ($k in $fsf.Keys) { Invoke-WebRequest -Uri $fsf[$k] -OutFile "$L\$k" -MaximumRetryCount 3 -RetryIntervalSec 5 }
           Get-ChildItem $L | Format-Table Name, Length
 
       - name: Instalar Qt ${{ env.QT_VERSION }} (MinGW 64-bit) + Qt Multimedia
@@ -251,14 +249,19 @@ jobs:
         if: always()
         run: |
           New-Item -ItemType Directory -Force informe | Out-Null
+          # Paso informativo: si una herramienta no llego a instalarse, lo indica sin fallar.
+          function Ver($cmd, [string[]]$a) {
+            if (Get-Command $cmd -ErrorAction SilentlyContinue) { ((& $cmd @a 2>&1) | Select-Object -First 2) -join ' | ' } else { '(no instalado en esta ejecucion)' }
+          }
           @(
             "Runner: $env:ImageOS $env:ImageVersion"
             "Qt: $env:QT_VERSION (win64_mingw)"
-            "qmake: $((qmake -v) -join ' | ')"
-            "Compilador: $((g++ --version | Select-Object -First 1))"
-            "mingw32-make: $((mingw32-make --version | Select-Object -First 1))"
+            "qmake: $(Ver qmake '-v')"
+            "Compilador: $(Ver g++ '--version')"
+            "mingw32-make: $(Ver mingw32-make '--version')"
           ) | Out-File informe\windows_versiones.txt
           Get-Content informe\windows_versiones.txt
+          $global:LASTEXITCODE = 0
 
       - uses: actions/upload-artifact@v7
         with:

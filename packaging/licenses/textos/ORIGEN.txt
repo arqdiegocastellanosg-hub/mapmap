@@ -1,0 +1,18 @@
+Textos oficiales de licencias de la Free Software Foundation, incluidos sin modificar.
+
+Se guardan en el repositorio para que la compilacion no dependa de descargas
+(https://www.gnu.org/licenses/gcc-exception-3.1.txt no existe; solo se publica en HTML).
+
+Archivo                                   Origen (repositorio de GCC, gcc-mirror/gcc @ f595792, 2026-11-12)
+GPL-3.0.txt                               COPYING3        - GNU General Public License v3
+LGPL-3.0.txt                              COPYING3.LIB    - GNU Lesser General Public License v3
+LGPL-2.1.txt                              COPYING.LIB     - GNU Lesser General Public License v2.1
+GCC-Runtime-Library-Exception-3.1.txt     COPYING.RUNTIME - GCC Runtime Library Exception v3.1
+
+SHA-256:
+8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  GPL-3.0.txt
+a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c  LGPL-3.0.txt
+a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861  LGPL-2.1.txt
+9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74  GCC-Runtime-Library-Exception-3.1.txt
+
+Copias de referencia: https://www.gnu.org/licenses/
