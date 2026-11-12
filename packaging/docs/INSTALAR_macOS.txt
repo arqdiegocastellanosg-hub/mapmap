@@ -1,0 +1,47 @@
+MapMap para macOS - Instalación y primer arranque
+=================================================
+
+Requisitos
+- macOS 12 Monterey o posterior.
+- Mac con Apple Silicon (M1, M2, M3, M4...) o con procesador Intel. La aplicación es Universal.
+
+INSTALACIÓN
+1. Abra MapMap_Installer_macOS.dmg con doble clic.
+2. Arrastre MapMap.app a la carpeta "Aplicaciones" que aparece en la misma ventana.
+3. Expulse el disco "MapMap".
+
+PRIMER ARRANQUE (IMPORTANTE)
+Esta copia de MapMap NO está firmada con un certificado de Apple Developer ni
+notarizada por Apple. Solo tiene una "firma ad hoc". Por eso macOS la bloquea la
+primera vez con un mensaje como "No se puede abrir MapMap porque Apple no puede
+comprobar si contiene software malicioso".
+
+Para permitirla (solo hace falta una vez):
+1. Intente abrir MapMap desde Aplicaciones. Cuando salga el aviso, pulse "OK" o "Listo".
+2. Abra Ajustes del Sistema > Privacidad y seguridad.
+3. Baje hasta la sección "Seguridad". Verá un mensaje sobre MapMap.
+   Pulse "Abrir igualmente".
+4. Confirme con su contraseña o Touch ID y vuelva a pulsar "Abrir".
+
+Alternativa para usuarios avanzados (Terminal):
+   xattr -dr com.apple.quarantine /Applications/MapMap.app
+
+Haga esto solo si obtuvo MapMap de una fuente de confianza (el fork oficial
+indicado en Versiones_y_Configuracion.txt). Puede comprobar el archivo con la
+suma SHA-256 publicada en SHA256SUMS.txt:
+   shasum -a 256 MapMap_Installer_macOS.dmg
+
+CÁMARA
+Si usa una cámara como fuente, macOS pedirá permiso la primera vez. Acéptelo,
+o actívelo en Ajustes del Sistema > Privacidad y seguridad > Cámara.
+
+VERSIÓN PORTABLE
+Descomprima MapMap_Portable_macOS.zip y abra MapMap.app. Se aplica el mismo
+procedimiento de primer arranque.
+
+PROYECTOR
+Conecte el proyector y, en Ajustes del Sistema > Pantallas, configúrelo como
+pantalla extendida (no duplicada). Después mueva la ventana de salida de MapMap
+a esa pantalla.
+
+Licencias: carpeta "Licencias" del DMG y MapMap.app/Contents/Resources/licencias.

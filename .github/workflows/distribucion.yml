@@ -1,0 +1,458 @@
+# Distribucion de MapMap: instaladores para Windows y macOS.
+#
+# Archivo anadido en el fork; no modifica build.yml (CI oficial del proyecto).
+# Genera:
+#   - MapMap_Setup_Windows.exe  + MapMap_Portable_Windows.zip
+#   - MapMap_Installer_macOS.dmg + MapMap_Portable_macOS.zip (Universal x86_64+arm64, firma ad hoc)
+#   - Codigo fuente correspondiente (GPL-3.0), licencias, documentacion e informes de prueba
+#   - MapMap_Distribucion.zip con toda la estructura de entrega
+#
+# Uso: pestana Actions > "Distribucion" > Run workflow,
+#      o crear una etiqueta que empiece por "v" (ej. v1.0.0-alpha.1).
+# Ver packaging/README.md.
+
+name: Distribucion
+
+on:
+  workflow_dispatch:
+    inputs:
+      plataformas:
+        description: 'Que generar. "Solo Windows": instalador + ZIP de Windows, sin macOS ni paquete final. "Completa": Windows + macOS + MapMap_Distribucion'
+        type: choice
+        options:
+          - Completa
+          - Solo Windows
+        default: Completa
+      macos_runner:
+        description: 'Runner de macOS. Ambos generan la app Universal (x86_64 + arm64); macos-15-intel evita la cola de los runners ARM64'
+        type: choice
+        options:
+          - macos-15-intel
+          - macos-15
+        default: macos-15-intel
+      publicar:
+        description: 'Publicar una Release (pre-release). Ademas requiere la variable de repositorio PUBLICAR_RELEASES=true'
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  # Misma version de Qt que el CI oficial (build.yml). Cambiar aqui para actualizar.
+  QT_VERSION: '6.8.0'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Codigo fuente correspondiente y licencias (comun a ambas plataformas)
+  # ---------------------------------------------------------------------------
+  fuente:
+    name: Codigo fuente y licencias
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Metadatos de version
+        id: meta
+        run: |
+          VERSION=$(sed -n 's/^MAPMAP_VERSION *= *//p' mapmap.pro | tr -d '[:space:]')
+          SHA=$(git rev-parse --short=7 HEAD)
+          test -n "$VERSION" || { echo "No se encontro MAPMAP_VERSION en mapmap.pro"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "MapMap $VERSION (commit $SHA)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Archivo de codigo fuente (GPL-3.0)
+        run: |
+          mkdir -p out/Codigo_Fuente
+          NAME="mapmap-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.sha }}"
+          git archive --format=tar.gz -9 --prefix="$NAME/" -o "out/Codigo_Fuente/$NAME.tar.gz" HEAD
+          {
+            echo "Codigo fuente correspondiente a los binarios de esta distribucion."
+            echo "Commit: $(git rev-parse HEAD)"
+            echo "Fecha:  $(git log -1 --format=%cI)"
+            echo "Repositorio del fork: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            echo "Repositorio oficial:  https://github.com/mapmapteam/mapmap"
+            echo
+            echo "Diferencias del fork respecto al proyecto oficial: solo se anadieron"
+            echo ".github/workflows/distribucion.yml y la carpeta packaging/."
+            echo "El codigo de MapMap (src/, resources/, mapmap.pro) no se modifico."
+          } > out/Codigo_Fuente/LEEME_CODIGO_FUENTE.txt
+
+      - name: Textos de licencia
+        run: |
+          mkdir -p out/Licencias
+          cp LICENSE out/Licencias/MapMap_GPL-3.0.txt
+          cp third_party/macos/Syphon.LICENSE.txt out/Licencias/Syphon_BSD-2-Clause.txt
+          cp packaging/licenses/THIRD_PARTY_NOTICES.md out/Licencias/
+          cp README.md out/Licencias/MapMap_README_autores_y_creditos.md
+          # Textos oficiales de la Free Software Foundation.
+          curl -fsSL https://www.gnu.org/licenses/lgpl-3.0.txt     -o out/Licencias/LGPL-3.0.txt
+          curl -fsSL https://www.gnu.org/licenses/lgpl-2.1.txt     -o out/Licencias/LGPL-2.1.txt
+          curl -fsSL https://www.gnu.org/licenses/gpl-3.0.txt      -o out/Licencias/GPL-3.0.txt
+          curl -fsSL https://www.gnu.org/licenses/gcc-exception-3.1.txt -o out/Licencias/GCC-Runtime-Library-Exception-3.1.txt
+          ls -l out/Licencias
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fuente-y-licencias
+          path: out/
+          overwrite: true
+
+  # ---------------------------------------------------------------------------
+  # 2. Windows: compilacion Release, despliegue, instalador, portable y pruebas
+  # ---------------------------------------------------------------------------
+  # Independiente de los demas jobs (no usa "needs"): se ejecuta igual en modo
+  # "Solo Windows" y en "Completa". Obtiene su propia version y licencias, con el
+  # mismo contenido que el job "fuente", en la carpeta fuente\Licencias.
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+
+      # Exporta MM_VERSION para los pasos siguientes (el env de un job no puede leer "steps").
+      - name: Metadatos de version
+        id: meta
+        run: |
+          $m = Select-String -Path mapmap.pro -Pattern '^MAPMAP_VERSION\s*=\s*(\S+)' | Select-Object -First 1
+          if (-not $m) { throw "No se encontro MAPMAP_VERSION en mapmap.pro" }
+          $v = $m.Matches[0].Groups[1].Value.Trim()
+          "version=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "MM_VERSION=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "MapMap $v (commit $($env:GITHUB_SHA.Substring(0,7))) - Windows" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          Write-Host "Version: $v"
+
+      - name: Textos de licencia (mismo contenido que el job fuente)
+        run: |
+          $L = 'fuente\Licencias'
+          New-Item -ItemType Directory -Force $L | Out-Null
+          Copy-Item LICENSE "$L\MapMap_GPL-3.0.txt"
+          Copy-Item third_party\macos\Syphon.LICENSE.txt "$L\Syphon_BSD-2-Clause.txt"
+          Copy-Item packaging\licenses\THIRD_PARTY_NOTICES.md "$L\"
+          Copy-Item README.md "$L\MapMap_README_autores_y_creditos.md"
+          # Textos oficiales de la Free Software Foundation.
+          $fsf = @{
+            'LGPL-3.0.txt' = 'https://www.gnu.org/licenses/lgpl-3.0.txt'
+            'LGPL-2.1.txt' = 'https://www.gnu.org/licenses/lgpl-2.1.txt'
+            'GPL-3.0.txt'  = 'https://www.gnu.org/licenses/gpl-3.0.txt'
+            'GCC-Runtime-Library-Exception-3.1.txt' = 'https://www.gnu.org/licenses/gcc-exception-3.1.txt'
+          }
+          foreach ($k in $fsf.Keys) { Invoke-WebRequest -Uri $fsf[$k] -OutFile "$L\$k" -MaximumRetryCount 3 -RetryIntervalSec 5 }
+          Get-ChildItem $L | Format-Table Name, Length
+
+      - name: Instalar Qt ${{ env.QT_VERSION }} (MinGW 64-bit) + Qt Multimedia
+        uses: jurplel/install-qt-action@v4
+        with:
+          cache: true
+          version: ${{ env.QT_VERSION }}
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw'
+          modules: 'qtmultimedia'
+          tools: 'tools_mingw1310'
+
+      - name: Compilar MapMap (Release)
+        run: |
+          qmake mapmap.pro -after "CONFIG-=debug" "CONFIG+=release"
+          mingw32-make -j4
+          if (-not (Test-Path MapMap\MapMap.exe)) { throw "No se genero MapMap\MapMap.exe" }
+          Get-Item MapMap\MapMap.exe | Format-List Name, Length, LastWriteTime
+
+      - name: Tests unitarios
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          cd tests
+          qmake6 tests.pro
+          mingw32-make -j4
+          mingw32-make check
+
+      - name: Desplegar dependencias (windeployqt)
+        run: |
+          New-Item -ItemType Directory -Force dist\MapMap | Out-Null
+          Copy-Item MapMap\MapMap.exe dist\MapMap\
+          windeployqt --release --compiler-runtime --no-system-d3d-compiler dist\MapMap\MapMap.exe
+          New-Item -ItemType Directory -Force dist\MapMap\licencias | Out-Null
+          Copy-Item fuente\Licencias\* dist\MapMap\licencias\
+          Remove-Item dist\MapMap\licencias\Syphon_BSD-2-Clause.txt   # solo aplica a macOS
+          Copy-Item packaging\docs\INSTALAR_Windows.txt dist\MapMap\LEEME.txt
+
+      - name: Verificar dependencias (Qt, FFmpeg, runtime MinGW, importaciones DLL)
+        run: ./packaging/windows/check_deps.ps1 -Dir dist\MapMap -Report informe\windows_dependencias.txt
+
+      - name: Crear version portable
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path dist\MapMap -DestinationPath out\MapMap_Portable_Windows.zip -CompressionLevel Optimal
+
+      - name: Instalar Inno Setup 6.5.4 (version fijada)
+        id: inno
+        env:
+          INNO_VERSION: '6.5.4'
+        run: |
+          # Version fijada para MapMap.iss (escrito para Inno Setup 6.3+). Inno Setup 7 existe
+          # y se instala en otra carpeta; por eso no se usa una ruta fija sino una busqueda.
+          function Find-Iscc {
+            Get-ChildItem -Path "${env:ProgramFiles(x86)}", "$env:ProgramFiles" -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+              Where-Object { $_.VersionInfo.ProductVersion -like "$env:INNO_VERSION*" } | Select-Object -First 1
+          }
+          $iscc = Find-Iscc
+          if (-not $iscc) {
+            # 1) Paquete de Chocolatey con la version exacta.
+            choco install innosetup --version=$env:INNO_VERSION --allow-downgrade --no-progress -y
+            if ($LASTEXITCODE -notin 0, 3010) { Write-Warning "Chocolatey no pudo instalar Inno Setup $env:INNO_VERSION (codigo $LASTEXITCODE)" }
+            $global:LASTEXITCODE = 0
+            $iscc = Find-Iscc
+          }
+          if (-not $iscc) {
+            # 2) Instalador oficial de jrsoftware.org, con verificacion de firma Authenticode.
+            $url = "https://files.jrsoftware.org/is/6/innosetup-$env:INNO_VERSION.exe"
+            $exe = Join-Path $env:RUNNER_TEMP "innosetup-$env:INNO_VERSION.exe"
+            Invoke-WebRequest -Uri $url -OutFile $exe
+            $sig = Get-AuthenticodeSignature $exe
+            Write-Host "Firma: $($sig.Status) - $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "Firma digital no valida en $url" }
+            Start-Process -FilePath $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/ALLUSERS' -Wait
+            $iscc = Find-Iscc
+          }
+          if (-not $iscc) {
+            Get-ChildItem "${env:ProgramFiles(x86)}", "$env:ProgramFiles" -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host "Encontrado (version no valida): $($_.FullName) $($_.VersionInfo.ProductVersion)" }
+            throw "No se encontro ISCC.exe de Inno Setup $env:INNO_VERSION"
+          }
+          Write-Host "ISCC: $($iscc.FullName) ($($iscc.VersionInfo.ProductVersion))"
+          "path=$($iscc.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force informe | Out-Null
+          "Inno Setup $($iscc.VersionInfo.ProductVersion) ($($iscc.FullName))" | Out-File informe\windows_innosetup_version.txt
+
+      - name: Crear instalador (Inno Setup)
+        run: |
+          $iscc = '${{ steps.inno.outputs.path }}'
+          & $iscc "/DMyAppVersion=$env:MM_VERSION" "/DSourceDir=$PWD\dist\MapMap" "/DOutputDir=$PWD\out" packaging\windows\MapMap.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup fallo (codigo $LASTEXITCODE)" }
+          if (-not (Test-Path out\MapMap_Setup_Windows.exe)) { throw "No se genero out\MapMap_Setup_Windows.exe" }
+          Get-Item out\MapMap_Setup_Windows.exe | Format-List Name, Length, LastWriteTime
+
+      - name: Probar instalador (instalar, ejecutar, desinstalar)
+        run: ./packaging/windows/test_installer.ps1 -Setup out\MapMap_Setup_Windows.exe -Report informe\windows_pruebas.md
+
+      - name: Versiones de herramientas
+        if: always()
+        run: |
+          New-Item -ItemType Directory -Force informe | Out-Null
+          @(
+            "Runner: $env:ImageOS $env:ImageVersion"
+            "Qt: $env:QT_VERSION (win64_mingw)"
+            "qmake: $((qmake -v) -join ' | ')"
+            "Compilador: $((g++ --version | Select-Object -First 1))"
+            "mingw32-make: $((mingw32-make --version | Select-Object -First 1))"
+          ) | Out-File informe\windows_versiones.txt
+          Get-Content informe\windows_versiones.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: out/
+          overwrite: true
+
+      # Un artefacto por archivo, para descargar cada uno directamente.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MapMap_Setup_Windows
+          path: out/MapMap_Setup_Windows.exe
+          if-no-files-found: error
+          overwrite: true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MapMap_Portable_Windows
+          path: out/MapMap_Portable_Windows.zip
+          if-no-files-found: error
+          overwrite: true
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: informe-windows
+          path: informe/
+          overwrite: true
+
+  # ---------------------------------------------------------------------------
+  # 3. macOS: compilacion Universal (x86_64 + arm64), bundle, DMG, portable
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS Universal
+    needs: fuente
+    # Omitido en modo "Solo Windows". Con etiqueta v* (sin formulario) se ejecuta.
+    if: inputs.plataformas != 'Solo Windows'
+    # macos-15-intel por defecto: compila las dos arquitecturas (compilacion cruzada de Xcode)
+    # y no depende de los runners ARM64, que suelen estar saturados. Soporte de GitHub hasta 2027.
+    # Con etiqueta v* no hay formulario y se usa el valor por defecto.
+    runs-on: ${{ inputs.macos_runner || 'macos-15-intel' }}
+    timeout-minutes: 90
+    env:
+      MM_VERSION: ${{ needs.fuente.outputs.version }}
+      MM_ARCHS: 'x86_64 arm64'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: fuente-y-licencias
+          path: fuente
+
+      # Qt oficial (no Homebrew): los binarios oficiales de Qt 6 para macOS son
+      # universales, requisito para generar una app Universal.
+      - name: Instalar Qt ${{ env.QT_VERSION }} (macOS, universal) + Qt Multimedia
+        uses: jurplel/install-qt-action@v4
+        with:
+          cache: true
+          version: ${{ env.QT_VERSION }}
+          host: 'mac'
+          target: 'desktop'
+          arch: 'clang_64'
+          modules: 'qtmultimedia'
+
+      - name: Comprobar que el Qt instalado es Universal (antes de compilar)
+        run: |
+          echo "Runner: $(uname -m), macOS $(sw_vers -productVersion)"
+          QTLIB="$(qmake -query QT_INSTALL_LIBS)"
+          QTPLUG="$(qmake -query QT_INSTALL_PLUGINS)"
+          FAIL=0
+          for f in "$QTLIB/QtCore.framework/QtCore" "$QTLIB/QtMultimedia.framework/QtMultimedia" \
+                   "$QTLIB/QtOpenGLWidgets.framework/QtOpenGLWidgets" \
+                   "$QTPLUG/multimedia/libffmpegmediaplugin.dylib" \
+                   $(ls "$QTLIB"/libavcodec*.dylib "$QTLIB"/libavformat*.dylib 2>/dev/null | head -2) \
+                   third_party/macos/Syphon.framework/Versions/A/Syphon; do
+            a=$(lipo -archs "$f" 2>/dev/null || echo "NO ENCONTRADO")
+            echo "$a  <- $f"
+            [[ " $a " == *" arm64 "* && ( " $a " == *" x86_64 "* || " $a " == *" x86_64h "* ) ]] || FAIL=1
+          done
+          [ "$FAIL" -eq 0 ] || { echo "::error::Qt, FFmpeg o Syphon no son universales en este runner"; exit 1; }
+
+      - name: Compilar MapMap Universal (Release)
+        run: |
+          # QMAKE_APPLE_DEVICE_ARCHS: qmake compila y une ambas arquitecturas en cada binario.
+          # El sistema minimo lo fija Qt (QMAKE_MACOSX_DEPLOYMENT_TARGET = 12.0 en Qt 6.8);
+          # check_app.sh lo verifica por arquitectura.
+          qmake mapmap.pro -after "CONFIG-=debug" "CONFIG+=release" \
+            "QMAKE_APPLE_DEVICE_ARCHS=$MM_ARCHS"
+          make -j"$(sysctl -n hw.logicalcpu)"
+          test -x MapMap.app/Contents/MacOS/MapMap || { echo "No se genero MapMap.app"; exit 1; }
+          echo "Arquitecturas del ejecutable: $(lipo -archs MapMap.app/Contents/MacOS/MapMap)"
+          grep -m1 -oE -- '-arch [a-z0-9_]+ -arch [a-z0-9_]+' Makefile || grep -m3 -E 'QMAKE_APPLE_DEVICE_ARCHS|-arch' Makefile || true
+
+      - name: Tests unitarios
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          cd tests
+          qmake6 tests.pro
+          make -j"$(sysctl -n hw.logicalcpu)"
+          make check
+
+      - name: Empaquetar (macdeployqt, licencias, firma ad hoc)
+        run: ./packaging/macos/package_app.sh MapMap.app "$MM_VERSION" fuente/Licencias
+
+      - name: Verificar Universal por arquitectura, dependencias y macOS 12
+        run: ./packaging/macos/check_app.sh MapMap.app informe/macos_dependencias.txt informe/macos_verificacion_universal.md 12.0
+
+      - name: Prueba de arranque (arquitecturas ejecutables en este runner)
+        run: ./packaging/macos/smoke_test.sh MapMap.app informe/macos_pruebas.md
+
+      - name: Crear DMG y version portable
+        run: ./packaging/macos/make_dmg.sh MapMap.app out fuente/Licencias
+
+      - name: Versiones de herramientas
+        if: always()
+        run: |
+          mkdir -p informe
+          {
+            echo "Runner: ${{ inputs.macos_runner || 'macos-15-intel' }} / $ImageOS $ImageVersion ($(sw_vers -productVersion), $(uname -m))"
+            echo "Qt: $QT_VERSION (clang_64, universal)"
+            echo "qmake: $(qmake -v | tr '\n' ' ')"
+            echo "Xcode: $(xcodebuild -version | tr '\n' ' ')"
+            echo "SDK: $(xcrun --show-sdk-version)"
+          } > informe/macos_versiones.txt
+          cat informe/macos_versiones.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: out/
+          overwrite: true
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: informe-macos
+          path: informe/
+          overwrite: true
+
+  # ---------------------------------------------------------------------------
+  # 4. Estructura final de entrega
+  # ---------------------------------------------------------------------------
+  distribucion:
+    name: Ensamblar MapMap_Distribucion
+    needs: [fuente, windows, macos]
+    # Solo en modo "Completa"; ademas requiere que fuente, windows y macos terminen bien
+    # (comportamiento por defecto de "needs").
+    if: inputs.plataformas != 'Solo Windows'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          path: artefactos
+      - name: Ensamblar
+        run: |
+          ./packaging/common/assemble_distribution.sh artefactos MapMap_Distribucion \
+            "${{ needs.fuente.outputs.version }}" "${{ needs.fuente.outputs.sha }}" "$QT_VERSION"
+          cat MapMap_Distribucion/Versiones_y_Configuracion.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MapMap_Distribucion
+          path: MapMap_Distribucion/
+          overwrite: true
+
+  # ---------------------------------------------------------------------------
+  # 5. Release de GitHub (solo con etiqueta v* o si se marca "publicar")
+  # ---------------------------------------------------------------------------
+  publicar:
+    name: Publicar Release
+    needs: [fuente, distribucion]
+    # Doble seguro: ademas de la etiqueta v* o la casilla "publicar", exige la variable de
+    # repositorio PUBLICAR_RELEASES=true (Settings > Secrets and variables > Actions > Variables).
+    # Mientras esa variable no exista, nunca se publica una Release.
+    if: vars.PUBLICAR_RELEASES == 'true' && (startsWith(github.ref, 'refs/tags/v') || inputs.publicar)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # solo este job puede crear Releases (GITHUB_TOKEN del propio repo)
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: MapMap_Distribucion
+          path: d
+      - name: Crear pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$GITHUB_REF" in refs/tags/*) ;; *) TAG="build-${{ needs.fuente.outputs.version }}-${{ needs.fuente.outputs.sha }}";; esac
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "MapMap ${{ needs.fuente.outputs.version }} (${{ needs.fuente.outputs.sha }})" \
+            --notes-file d/Documentacion/NOTAS_DE_VERSION.md \
+            d/Windows/MapMap_Setup_Windows.exe d/Windows/MapMap_Portable_Windows.zip \
+            d/macOS/MapMap_Installer_macOS.dmg d/macOS/MapMap_Portable_macOS.zip \
+            d/Codigo_Fuente/*.tar.gz
