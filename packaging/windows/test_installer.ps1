@@ -52,7 +52,10 @@ Remove-Item Env:QT_OPENGL
 
 # 3. Desinstalacion
 $u = Start-Process -FilePath "$dir\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
-Start-Sleep -Seconds 3
+# El desinstalador de Inno Setup continua desde una copia temporal: se espera hasta 60 s
+# a que termine de borrar los archivos (la comprobacion sigue siendo la misma).
+$deadline = (Get-Date).AddSeconds(60)
+while ((Test-Path "$dir\MapMap.exe") -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 2 }
 Res 'Desinstalacion silenciosa' ($u.ExitCode -eq 0) "(codigo $($u.ExitCode))"
 Res 'MapMap.exe eliminado tras desinstalar' (-not (Test-Path "$dir\MapMap.exe"))
 

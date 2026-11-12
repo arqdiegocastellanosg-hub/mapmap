@@ -11,6 +11,8 @@ param(
   [Parameter(Mandatory)] [string] $Report
 )
 $ErrorActionPreference = 'Stop'
+# Ruta absoluta: las rutas del informe se calculan relativas a esta carpeta.
+$Dir = (Resolve-Path -LiteralPath $Dir).Path.TrimEnd('\')
 New-Item -ItemType Directory -Force (Split-Path $Report) | Out-Null
 $lines = New-Object System.Collections.Generic.List[string]
 $fail = $false

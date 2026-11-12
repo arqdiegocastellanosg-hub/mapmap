@@ -6,6 +6,10 @@ Requisitos
 - Tarjeta gráfica con controladores actualizados (OpenGL). Si no hay controlador,
   MapMap puede usar el OpenGL por software incluido, aunque irá más lento.
 - No hace falta conexión a internet ni instalar nada más.
+- Ediciones "N" de Windows (por ejemplo, Windows 11 Pro N): instale antes el
+  "Media Feature Pack" de Microsoft (Configuración > Aplicaciones > Características
+  opcionales). Sin él, Windows no incluye Media Foundation y MapMap no podrá
+  reproducir vídeo ni audio.
 
 OPCIÓN A: instalador (recomendado)
 1. Haga doble clic en MapMap_Setup_Windows.exe.
