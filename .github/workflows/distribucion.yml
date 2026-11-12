@@ -202,17 +202,23 @@ jobs:
         env:
           INNO_VERSION: '6.5.4'
         run: |
-          # Version fijada para MapMap.iss (escrito para Inno Setup 6.3+). Inno Setup 7 existe
-          # y se instala en otra carpeta; por eso se busca ISCC.exe y se comprueba su version
-          # numerica (Major.Minor.Build del recurso de version), sin depender de una ruta fija.
+          # Version fijada para MapMap.iss (escrito para Inno Setup 6.3+). Inno Setup 7 existe y se
+          # instala en otra carpeta, asi que no se usa una ruta fija. ISCC.exe no tiene recurso de
+          # version (aparece como 0.0.0.0), por lo que la version se lee de la clave de desinstalacion
+          # que escribe el instalador de Inno Setup ("Inno Setup N_is1": DisplayVersion + InstallLocation).
           $want = [version]$env:INNO_VERSION
           function Find-Iscc {
-            $found = Get-ChildItem -Path "${env:ProgramFiles(x86)}", "$env:ProgramFiles" -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue
-            foreach ($f in $found) {
-              $vi = $f.VersionInfo
-              $v = [version]::new($vi.FileMajorPart, $vi.FileMinorPart, $vi.FileBuildPart)
-              Write-Host "  ISCC encontrado: $($f.FullName) | version $v | FileVersion '$($vi.FileVersion)' | ProductVersion '$($vi.ProductVersion)'"
-              if ($v -eq $want) { return $f }
+            $roots = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+                     'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+                     'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+            $entries = foreach ($r in $roots) {
+              Get-ChildItem $r -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -like 'Inno Setup*_is1' } | Get-ItemProperty
+            }
+            foreach ($e in $entries) {
+              $p = if ($e.InstallLocation) { Join-Path $e.InstallLocation 'ISCC.exe' } else { '' }
+              Write-Host "  Inno Setup registrado: version '$($e.DisplayVersion)' en '$($e.InstallLocation)' | ISCC.exe existe: $([bool]($p -and (Test-Path $p)))"
+              $dv = $null
+              if ([version]::TryParse([string]$e.DisplayVersion, [ref]$dv) -and ($dv -eq $want) -and $p -and (Test-Path $p)) { return (Get-Item $p) }
             }
             return $null
           }
@@ -240,7 +246,7 @@ jobs:
             Write-Host "Buscando tras el instalador oficial..."
             $iscc = Find-Iscc
           }
-          if (-not $iscc) { throw "No se encontro ISCC.exe de Inno Setup $want (ver la lista de candidatos arriba)" }
+          if (-not $iscc) { throw "No se encontro Inno Setup $want registrado con ISCC.exe (ver la lista de instalaciones arriba)" }
           Write-Host "ISCC seleccionado: $($iscc.FullName)"
           "path=$($iscc.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
           New-Item -ItemType Directory -Force informe | Out-Null
