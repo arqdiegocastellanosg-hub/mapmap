@@ -84,6 +84,10 @@ function Start-Isolated($label, $exe, $workdir, $logName) {
   $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
   $env:QT_OPENGL = 'software'
   $env:QT_DEBUG_PLUGINS = '1'
+  # MapMap es una aplicacion grafica (sin consola): sin esto Qt envia sus mensajes a
+  # OutputDebugString y el registro quedaria vacio. MapMap instala su propio gestor de
+  # mensajes despues de crear la aplicacion; la carga del plugin de plataforma ocurre antes.
+  $env:QT_FORCE_STDERR_LOGGING = '1'
   $log = Join-Path $ReportDir $logName
   $alive = $false; $code = ''
   try {
@@ -93,19 +97,23 @@ function Start-Isolated($label, $exe, $workdir, $logName) {
     if ($alive) { Stop-Process -Id $app.Id -Force; Start-Sleep -Seconds 2 }
     else { $code = "(salio con codigo $($app.ExitCode); ver $logName)" }
   } finally {
-    Remove-Item Env:QT_OPENGL, Env:QT_DEBUG_PLUGINS -ErrorAction SilentlyContinue
+    Remove-Item Env:QT_OPENGL, Env:QT_DEBUG_PLUGINS, Env:QT_FORCE_STDERR_LOGGING -ErrorAction SilentlyContinue
     $env:PATH = $savedPath
     foreach ($k in $saved.Keys) { Set-Item "Env:$k" $saved[$k] }
   }
   Res "$label`: arranque en entorno aislado (20 s sin cerrarse; sin Qt en PATH ni variables QT_*)" $alive $code
 
   $text = if (Test-Path $log) { [string](Get-Content $log -Raw) } else { '' }
+  $lines = if ($text) { @($text -split "`r?`n" | Where-Object { $_ -match 'qt\.core' }).Count } else { 0 }
+  # La verificacion solo cuenta si el registro tiene contenido de Qt: un registro vacio es FALLO.
   $usesQt = [bool]$QtBase -and (($text -match [regex]::Escape($QtBaseFwd)) -or ($text -match [regex]::Escape($QtBase)))
-  Res "$label`: no usa la instalacion de Qt del runner (registro QT_DEBUG_PLUGINS)" (-not $usesQt) $(if ($usesQt) { "(el registro menciona $QtBase)" } else { '' })
+  $okNoQt = ($lines -gt 0) -and (-not $usesQt)
+  $why = if ($lines -eq 0) { '(registro vacio: no se pudo verificar)' } elseif ($usesQt) { "(el registro menciona $QtBase)" } else { "($lines lineas de qt.core analizadas)" }
+  Res "$label`: no usa la instalacion de Qt del runner (registro QT_DEBUG_PLUGINS)" $okNoQt $why
 
   $wdFwd = $workdir.Replace('\', '/').TrimEnd('/')
   $fromApp = ($text -match ([regex]::Escape($wdFwd) + '/platforms/qwindows\.dll')) -or ($text -match ([regex]::Escape($workdir) + '\\platforms\\qwindows\.dll'))
-  $script:r.Add("| $label`: plugin qwindows.dll cargado desde la carpeta de MapMap (informativo) | $(if ($fromApp) {'CONFIRMADO en el registro'} else {'no aparece en el registro'}) |")
+  Res "$label`: plugin qwindows.dll cargado desde la carpeta de MapMap" $fromApp $(if ($fromApp) { '' } else { "(no aparece en $logName)" })
 }
 
 # ---------------- INSTALADOR ----------------
