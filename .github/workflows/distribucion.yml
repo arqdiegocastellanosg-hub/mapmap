@@ -97,6 +97,7 @@ jobs:
         with:
           name: fuente-y-licencias
           path: out/
+          overwrite: true
 
   # ---------------------------------------------------------------------------
   # 2. Windows: compilacion Release, despliegue, instalador, portable y pruebas
@@ -163,16 +164,53 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           Compress-Archive -Path dist\MapMap -DestinationPath out\MapMap_Portable_Windows.zip -CompressionLevel Optimal
 
+      - name: Instalar Inno Setup 6.5.4 (version fijada)
+        id: inno
+        env:
+          INNO_VERSION: '6.5.4'
+        run: |
+          # Version fijada para MapMap.iss (escrito para Inno Setup 6.3+). Inno Setup 7 existe
+          # y se instala en otra carpeta; por eso no se usa una ruta fija sino una busqueda.
+          function Find-Iscc {
+            Get-ChildItem -Path "${env:ProgramFiles(x86)}", "$env:ProgramFiles" -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+              Where-Object { $_.VersionInfo.ProductVersion -like "$env:INNO_VERSION*" } | Select-Object -First 1
+          }
+          $iscc = Find-Iscc
+          if (-not $iscc) {
+            # 1) Paquete de Chocolatey con la version exacta.
+            choco install innosetup --version=$env:INNO_VERSION --allow-downgrade --no-progress -y
+            if ($LASTEXITCODE -notin 0, 3010) { Write-Warning "Chocolatey no pudo instalar Inno Setup $env:INNO_VERSION (codigo $LASTEXITCODE)" }
+            $global:LASTEXITCODE = 0
+            $iscc = Find-Iscc
+          }
+          if (-not $iscc) {
+            # 2) Instalador oficial de jrsoftware.org, con verificacion de firma Authenticode.
+            $url = "https://files.jrsoftware.org/is/6/innosetup-$env:INNO_VERSION.exe"
+            $exe = Join-Path $env:RUNNER_TEMP "innosetup-$env:INNO_VERSION.exe"
+            Invoke-WebRequest -Uri $url -OutFile $exe
+            $sig = Get-AuthenticodeSignature $exe
+            Write-Host "Firma: $($sig.Status) - $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "Firma digital no valida en $url" }
+            Start-Process -FilePath $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/ALLUSERS' -Wait
+            $iscc = Find-Iscc
+          }
+          if (-not $iscc) {
+            Get-ChildItem "${env:ProgramFiles(x86)}", "$env:ProgramFiles" -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host "Encontrado (version no valida): $($_.FullName) $($_.VersionInfo.ProductVersion)" }
+            throw "No se encontro ISCC.exe de Inno Setup $env:INNO_VERSION"
+          }
+          Write-Host "ISCC: $($iscc.FullName) ($($iscc.VersionInfo.ProductVersion))"
+          "path=$($iscc.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force informe | Out-Null
+          "Inno Setup $($iscc.VersionInfo.ProductVersion) ($($iscc.FullName))" | Out-File informe\windows_innosetup_version.txt
+
       - name: Crear instalador (Inno Setup)
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup --no-progress -y
-          }
+          $iscc = '${{ steps.inno.outputs.path }}'
           & $iscc "/DMyAppVersion=$env:MM_VERSION" "/DSourceDir=$PWD\dist\MapMap" "/DOutputDir=$PWD\out" packaging\windows\MapMap.iss
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup fallo" }
-          if (-not (Test-Path out\MapMap_Setup_Windows.exe)) { throw "No se genero el instalador" }
-          "Inno Setup $((Get-Item $iscc).VersionInfo.ProductVersion)" | Out-File informe\windows_innosetup_version.txt
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup fallo (codigo $LASTEXITCODE)" }
+          if (-not (Test-Path out\MapMap_Setup_Windows.exe)) { throw "No se genero out\MapMap_Setup_Windows.exe" }
+          Get-Item out\MapMap_Setup_Windows.exe | Format-List Name, Length, LastWriteTime
 
       - name: Probar instalador (instalar, ejecutar, desinstalar)
         run: ./packaging/windows/test_installer.ps1 -Setup out\MapMap_Setup_Windows.exe -Report informe\windows_pruebas.md
@@ -194,12 +232,14 @@ jobs:
         with:
           name: windows
           path: out/
+          overwrite: true
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: informe-windows
           path: informe/
+          overwrite: true
 
   # ---------------------------------------------------------------------------
   # 3. macOS: compilacion Universal (x86_64 + arm64), bundle, DMG, portable
@@ -302,12 +342,14 @@ jobs:
         with:
           name: macos
           path: out/
+          overwrite: true
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: informe-macos
           path: informe/
+          overwrite: true
 
   # ---------------------------------------------------------------------------
   # 4. Estructura final de entrega
@@ -330,6 +372,7 @@ jobs:
         with:
           name: MapMap_Distribucion
           path: MapMap_Distribucion/
+          overwrite: true
 
   # ---------------------------------------------------------------------------
   # 5. Release de GitHub (solo con etiqueta v* o si se marca "publicar")
