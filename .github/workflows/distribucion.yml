@@ -180,7 +180,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist\MapMap | Out-Null
           Copy-Item MapMap\MapMap.exe dist\MapMap\
-          windeployqt --release --compiler-runtime --no-system-d3d-compiler dist\MapMap\MapMap.exe
+          # --multimediawidgets: mapmap.pro declara QT += multimediawidgets, pero el enlazador no genera
+          # importacion porque el codigo no usa QVideoWidget; se fuerza su despliegue para que el
+          # paquete incluya todos los modulos declarados por el proyecto (verificado en check_deps.ps1).
+          windeployqt --release --compiler-runtime --no-system-d3d-compiler --multimediawidgets dist\MapMap\MapMap.exe
           New-Item -ItemType Directory -Force dist\MapMap\licencias | Out-Null
           Copy-Item fuente\Licencias\* dist\MapMap\licencias\
           Remove-Item dist\MapMap\licencias\Syphon_BSD-2-Clause.txt   # solo aplica a macOS
