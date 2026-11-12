@@ -18,8 +18,17 @@ Release (ver abajo) o descargue `MapMap_Distribucion` y guárdelo como copia mae
 
 ## Generar una nueva versión
 **Opción 1, manual:** en GitHub, abra el fork > pestaña **Actions** > **Distribucion** >
-**Run workflow**. Elija el runner de macOS (por defecto `macos-15-intel`). Tarda unos 20-40 minutos.
-Los resultados quedan como artefactos de la ejecución. No se publica nada.
+**Run workflow**. Elija qué generar en **plataformas**:
+
+| Modo | Jobs que se ejecutan | Artefactos |
+|---|---|---|
+| **Solo Windows** | `windows` (independiente) y `fuente` (código fuente GPL, en paralelo) | `MapMap_Setup_Windows`, `MapMap_Portable_Windows`, `windows`, `informe-windows`, `fuente-y-licencias` |
+| **Completa** (por defecto) | `fuente`, `windows`, `macos`, `distribucion` | Todo lo anterior, más `macos`, `informe-macos` y `MapMap_Distribucion` |
+
+En el modo Solo Windows, el job `windows` no depende de ningún otro: no espera a macOS ni a
+Ubuntu, y obtiene su propia versión y licencias. Tampoco se genera el paquete multiplataforma.
+En modo Completa, elija también el runner de macOS (por defecto `macos-15-intel`).
+Tarda unos 20-40 minutos. Los resultados quedan como artefactos de la ejecución y no se publica nada.
 
 **Opción 2, con etiqueta:** cree una etiqueta que empiece por `v` (por ejemplo `v1.0.0-alpha.1`).
 El workflow se ejecuta con el runner de macOS por defecto.

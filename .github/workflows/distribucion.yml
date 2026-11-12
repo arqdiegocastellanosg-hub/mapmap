@@ -16,6 +16,13 @@ name: Distribucion
 on:
   workflow_dispatch:
     inputs:
+      plataformas:
+        description: 'Que generar. "Solo Windows": instalador + ZIP de Windows, sin macOS ni paquete final. "Completa": Windows + macOS + MapMap_Distribucion'
+        type: choice
+        options:
+          - Completa
+          - Solo Windows
+        default: Completa
       macos_runner:
         description: 'Runner de macOS. Ambos generan la app Universal (x86_64 + arm64); macos-15-intel evita la cola de los runners ARM64'
         type: choice
@@ -102,22 +109,47 @@ jobs:
   # ---------------------------------------------------------------------------
   # 2. Windows: compilacion Release, despliegue, instalador, portable y pruebas
   # ---------------------------------------------------------------------------
+  # Independiente de los demas jobs (no usa "needs"): se ejecuta igual en modo
+  # "Solo Windows" y en "Completa". Obtiene su propia version y licencias, con el
+  # mismo contenido que el job "fuente", en la carpeta fuente\Licencias.
   windows:
     name: Windows x64
-    needs: fuente
     runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
-    env:
-      MM_VERSION: ${{ needs.fuente.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v7
-        with:
-          name: fuente-y-licencias
-          path: fuente
+      # Exporta MM_VERSION para los pasos siguientes (el env de un job no puede leer "steps").
+      - name: Metadatos de version
+        id: meta
+        run: |
+          $m = Select-String -Path mapmap.pro -Pattern '^MAPMAP_VERSION\s*=\s*(\S+)' | Select-Object -First 1
+          if (-not $m) { throw "No se encontro MAPMAP_VERSION en mapmap.pro" }
+          $v = $m.Matches[0].Groups[1].Value.Trim()
+          "version=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "MM_VERSION=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "MapMap $v (commit $($env:GITHUB_SHA.Substring(0,7))) - Windows" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          Write-Host "Version: $v"
+
+      - name: Textos de licencia (mismo contenido que el job fuente)
+        run: |
+          $L = 'fuente\Licencias'
+          New-Item -ItemType Directory -Force $L | Out-Null
+          Copy-Item LICENSE "$L\MapMap_GPL-3.0.txt"
+          Copy-Item third_party\macos\Syphon.LICENSE.txt "$L\Syphon_BSD-2-Clause.txt"
+          Copy-Item packaging\licenses\THIRD_PARTY_NOTICES.md "$L\"
+          Copy-Item README.md "$L\MapMap_README_autores_y_creditos.md"
+          # Textos oficiales de la Free Software Foundation.
+          $fsf = @{
+            'LGPL-3.0.txt' = 'https://www.gnu.org/licenses/lgpl-3.0.txt'
+            'LGPL-2.1.txt' = 'https://www.gnu.org/licenses/lgpl-2.1.txt'
+            'GPL-3.0.txt'  = 'https://www.gnu.org/licenses/gpl-3.0.txt'
+            'GCC-Runtime-Library-Exception-3.1.txt' = 'https://www.gnu.org/licenses/gcc-exception-3.1.txt'
+          }
+          foreach ($k in $fsf.Keys) { Invoke-WebRequest -Uri $fsf[$k] -OutFile "$L\$k" -MaximumRetryCount 3 -RetryIntervalSec 5 }
+          Get-ChildItem $L | Format-Table Name, Length
 
       - name: Instalar Qt ${{ env.QT_VERSION }} (MinGW 64-bit) + Qt Multimedia
         uses: jurplel/install-qt-action@v4
@@ -234,6 +266,21 @@ jobs:
           path: out/
           overwrite: true
 
+      # Un artefacto por archivo, para descargar cada uno directamente.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MapMap_Setup_Windows
+          path: out/MapMap_Setup_Windows.exe
+          if-no-files-found: error
+          overwrite: true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MapMap_Portable_Windows
+          path: out/MapMap_Portable_Windows.zip
+          if-no-files-found: error
+          overwrite: true
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -247,6 +294,8 @@ jobs:
   macos:
     name: macOS Universal
     needs: fuente
+    # Omitido en modo "Solo Windows". Con etiqueta v* (sin formulario) se ejecuta.
+    if: inputs.plataformas != 'Solo Windows'
     # macos-15-intel por defecto: compila las dos arquitecturas (compilacion cruzada de Xcode)
     # y no depende de los runners ARM64, que suelen estar saturados. Soporte de GitHub hasta 2027.
     # Con etiqueta v* no hay formulario y se usa el valor por defecto.
@@ -357,6 +406,9 @@ jobs:
   distribucion:
     name: Ensamblar MapMap_Distribucion
     needs: [fuente, windows, macos]
+    # Solo en modo "Completa"; ademas requiere que fuente, windows y macos terminen bien
+    # (comportamiento por defecto de "needs").
+    if: inputs.plataformas != 'Solo Windows'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
