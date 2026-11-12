@@ -260,8 +260,8 @@ jobs:
           if (-not (Test-Path out\MapMap_Setup_Windows.exe)) { throw "No se genero out\MapMap_Setup_Windows.exe" }
           Get-Item out\MapMap_Setup_Windows.exe | Format-List Name, Length, LastWriteTime
 
-      - name: Probar instalador (instalar, ejecutar, desinstalar)
-        run: ./packaging/windows/test_installer.ps1 -Setup out\MapMap_Setup_Windows.exe -Report informe\windows_pruebas.md
+      - name: Probar instalador y version portable (entorno aislado sin Qt)
+        run: ./packaging/windows/test_installer.ps1 -Setup out\MapMap_Setup_Windows.exe -Report informe\windows_pruebas.md -Dist dist\MapMap -Zip out\MapMap_Portable_Windows.zip
 
       - name: Versiones de herramientas
         if: always()
