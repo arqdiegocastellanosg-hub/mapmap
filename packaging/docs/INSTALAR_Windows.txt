@@ -1,0 +1,35 @@
+MapMap para Windows - Instalación
+=================================
+
+Requisitos
+- Windows 10 (versión 1809 o posterior) o Windows 11, de 64 bits.
+- Tarjeta gráfica con controladores actualizados (OpenGL). Si no hay controlador,
+  MapMap puede usar el OpenGL por software incluido, aunque irá más lento.
+- No hace falta conexión a internet ni instalar nada más.
+
+OPCIÓN A: instalador (recomendado)
+1. Haga doble clic en MapMap_Setup_Windows.exe.
+2. Si Windows muestra "Windows protegió su PC" (SmartScreen):
+   pulse "Más información" y luego "Ejecutar de todas formas".
+   El aviso aparece porque el instalador no tiene un certificado de firma comercial.
+   No significa que tenga un virus.
+3. Elija el idioma, acepte la licencia (GPL v3) y la carpeta de instalación.
+   Por defecto se instala en C:\Archivos de programa\MapMap.
+4. Marque "Crear un acceso directo en el escritorio" si lo desea.
+5. Al terminar, MapMap aparece en el menú Inicio y, si lo eligió, en el escritorio.
+
+Para desinstalar: Configuración > Aplicaciones > MapMap > Desinstalar,
+o menú Inicio > MapMap > Desinstalar MapMap.
+
+OPCIÓN B: versión portable (sin instalar)
+1. Descomprima MapMap_Portable_Windows.zip (clic derecho > Extraer todo).
+2. Abra la carpeta MapMap y haga doble clic en MapMap.exe.
+   No separe MapMap.exe de las demás carpetas y DLL: las necesita para funcionar.
+
+Varias pantallas y proyector
+- Conecte el proyector y elija "Extender" con la tecla Windows + P.
+- En MapMap, abra la ventana de salida y muévala a la pantalla del proyector
+  (o use la pantalla completa en esa pantalla).
+
+Licencias: carpeta "licencias" junto a MapMap.exe.
+Código fuente: https://github.com/mapmapteam/mapmap y la carpeta Codigo_Fuente de la distribución.

@@ -1,0 +1,20 @@
+## MapMap @VERSION@ (commit @SHA@)
+
+Compilación no oficial de la comunidad, generada con GitHub Actions a partir del código
+fuente de https://github.com/mapmapteam/mapmap. Es una **versión preliminar (alpha)** del proyecto.
+
+| Archivo | Plataforma |
+|---|---|
+| MapMap_Setup_Windows.exe | Instalador para Windows 10 (1809+) y 11, 64 bits |
+| MapMap_Portable_Windows.zip | Windows, sin instalación |
+| MapMap_Installer_macOS.dmg | macOS 12+, Universal (Intel + Apple Silicon) |
+| MapMap_Portable_macOS.zip | macOS, sin instalación |
+| mapmap-*.tar.gz | Código fuente correspondiente (GPL-3.0) |
+
+- Qt @QT@ con Qt Multimedia (FFmpeg). No necesita GStreamer.
+- **Windows:** sin firma de código, así que SmartScreen puede mostrar un aviso.
+- **macOS:** firma ad hoc, no notarizada. La primera vez hay que usar
+  Ajustes del Sistema > Privacidad y seguridad > "Abrir igualmente".
+- Las pruebas realizadas y las pendientes están en `Informe_Pruebas/`.
+
+Licencia: GNU GPL v3. Componentes de terceros: ver `Licencias/THIRD_PARTY_NOTICES.md`.
